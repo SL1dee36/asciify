@@ -211,6 +211,8 @@ def acsiify_wrapper(obj_type=None, **kwargs):
 
 
 acsiify.image("input.jpg",color_lvl=32, output_path='output32.jpg',pixel_size=10) 
+acsiify.video("input.mp4", output_path='output.mp4', pixel_size=10, output_fps=60)
+
 acsiify.image("input.jpg",color_lvl=64, output_path='output64.jpg',pixel_size=10) 
 acsiify.image("input.jpg",color_lvl=96, output_path='output96.jpg',pixel_size=10) 
 acsiify.image("input.jpg",color_lvl=128, output_path='output128.jpg',pixel_size=10) 
