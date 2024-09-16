@@ -3,7 +3,13 @@ import numpy as np
 from numba import njit
 import cv2
 import os
+from cffi import FFI  # Using cffi for the example
 
+ffi = FFI()
+ffi.dlopen("palette_generator.so") # Load your compiled C++ library
+
+ffi.cdef("void create_palette(int color_lvl, const char* ascii_chars, void* output_palette);") 
+ffi.C.create_palette
 
 @njit(fastmath=True)
 def _accelerate_conversion(image, gray_image, width, height, color_coeff, ascii_coeff, step):
@@ -15,19 +21,6 @@ def _accelerate_conversion(image, gray_image, width, height, color_coeff, ascii_
                 r, g, b = image[x, y] // color_coeff
                 array_of_values.append((char_index, (r, g, b), (x, y)))
     return array_of_values
-
-def _create_palette(font, ascii_chars, color_lvl):
-    colors, color_coeff = np.linspace(0, 255, num=color_lvl, dtype=int, retstep=True)
-    color_palette = [np.array([r, g, b]) for r in colors for g in colors for b in colors]
-    palette = dict.fromkeys(ascii_chars, None)
-    color_coeff = int(color_coeff)
-    for char in palette:
-        char_palette = {}
-        for color in color_palette:
-            color_key = tuple(color // color_coeff)
-            char_palette[color_key] = font.render(char, False, tuple(color))
-        palette[char] = char_palette
-    return palette, color_coeff
 
 def _draw_converted_image(surface, image, gray_image, palette, ascii_chars, ascii_coeff, color_coeff, char_step):
     width, height = image.shape[0], image.shape[1]
@@ -92,7 +85,9 @@ class Asciify:
         ascii_coeff = 255 // (len(self.ascii_chars) - 1)
         char_step = int(pixel_size * 1)
 
-        palette, color_coeff = _create_palette(self.font, self.ascii_chars, color_lvl)
+        # Get the color palette from C++ 
+        palette = ffi.new("struct palette_type*") 
+        ffi.C.create_palette(color_lvl, self.ascii_chars, ffi.cast("void*", palette))
 
         capture = cv2.VideoCapture(video_path)
         total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -162,7 +157,9 @@ class Asciify:
         ascii_coeff = 255 // (len(self.ascii_chars) - 1)
         char_step = int(pixel_size * 1)
 
-        palette, color_coeff = _create_palette(self.font, self.ascii_chars, color_lvl)
+        # Get the color palette from C++ 
+        palette = ffi.new("struct palette_type*") 
+        ffi.C.create_palette(color_lvl, self.ascii_chars, ffi.cast("void*", palette))
 
         image, gray_image = _get_image(image_path, None)
 
@@ -207,15 +204,9 @@ def acsiify_wrapper(obj_type=None, **kwargs):
         return acsiify.video(video_path, **kwargs)
     elif obj_type == 'image':
         image_path = kwargs.pop('image')
-        return acsiify.image(image_path, **kwargs)
+        return acsiify.image(image_path, **kwargs) 
 
-
-acsiify.image("input.jpg",color_lvl=32, output_path='output32.jpg',pixel_size=10) 
-acsiify.video("input.mp4", output_path='output.mp4', pixel_size=10, output_fps=60)
-
-acsiify.image("input.jpg",color_lvl=64, output_path='output64.jpg',pixel_size=10) 
-acsiify.image("input.jpg",color_lvl=96, output_path='output96.jpg',pixel_size=10) 
+#acsiify.image("test.jpg",color_lvl=64, output_path='64bit_fullsize.jpg',pixel_size=8) 
+#acsiify.video("input.mp4", output_path="output.avi", geometry="640x360", pixel_size=10)
 acsiify.image("input.jpg",color_lvl=128, output_path='output128.jpg',pixel_size=10) 
 acsiify.image("input.jpg",color_lvl=256, output_path='output256.jpg',pixel_size=10) 
-
-#acsiify.video("input.mp4", output_path="output.mp4", geometry="1920x1080", pixel_size=10)
