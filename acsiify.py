@@ -1,79 +1,83 @@
 import pygame as pg
 import numpy as np
-from numba import njit
 import cv2
 import os
-
+from numba import njit
 
 @njit(fastmath=True)
 def _accelerate_conversion(image, gray_image, width, height, color_coeff, ascii_coeff, step):
+    """Converts a section of an image to ASCII art."""
     array_of_values = []
     for x in range(0, width, step):
         for y in range(0, height, step):
             char_index = gray_image[x, y] // ascii_coeff
-            if char_index:
-                r, g, b = image[x, y] // color_coeff
-                array_of_values.append((char_index, (r, g, b), (x, y)))
+            if 0 < char_index < len(ascii_chars):  # Corrected condition
+                r, g, b = image[x, y]
+                array_of_values.append((char_index, (r // color_coeff, g // color_coeff, b // color_coeff), (x, y)))
     return array_of_values
 
+
 def _create_palette(font, ascii_chars, color_lvl):
+    """Creates a palette of ASCII characters with corresponding colors."""
     colors, color_coeff = np.linspace(0, 255, num=color_lvl, dtype=int, retstep=True)
-    color_palette = [np.array([r, g, b]) for r in colors for g in colors for b in colors]
-    palette = dict.fromkeys(ascii_chars, None)
+    color_palette = [tuple(color // color_coeff) for r in colors for g in colors for b in colors]
+    palette = {}
     color_coeff = int(color_coeff)
-    for char in palette:
+    for char in ascii_chars:
         char_palette = {}
         for color in color_palette:
-            color_key = tuple(color // color_coeff)
-            char_palette[color_key] = font.render(char, False, tuple(color))
+            char_palette[color] = font.render(char, False, color)
         palette[char] = char_palette
     return palette, color_coeff
 
+
 def _draw_converted_image(surface, image, gray_image, palette, ascii_chars, ascii_coeff, color_coeff, char_step):
+    """Draws the converted ASCII image onto the Pygame surface."""
     width, height = image.shape[0], image.shape[1]
     array_of_values = _accelerate_conversion(image, gray_image, width, height, color_coeff, ascii_coeff, char_step)
     for char_index, color, pos in array_of_values:
-        char = ascii_chars[char_index]
+        char = ascii_chars[char_index - 1]  # Index correction
         surface.blit(palette[char][color], pos)
 
+
 def _get_image(path, capture):
+    """Loads an image from a file or from a video capture."""
     if path:
         cv2_image = cv2.imread(path)
     else:
         ret, cv2_image = capture.read()
         if not ret:
-            exit()
-    transposed_image = cv2.transpose(cv2_image)
-    image = cv2.cvtColor(transposed_image, cv2.COLOR_BGR2RGB)
-    gray_image = cv2.cvtColor(transposed_image, cv2.COLOR_BGR2GRAY)
-    return image, gray_image
+            raise IOError("Error reading frame from video")  # Raise exception
+    return cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB), cv2.cvtColor(cv2_image, cv2.COLOR_BGR2GRAY)
+
 
 def _save_image(surface, output):
-    if output:
-        pygame_image = pg.surfarray.array3d(surface)
-        cv2_img = cv2.transpose(pygame_image)
-        cv2_img = cv2.cvtColor(cv2_img, cv2.COLOR_RGB2BGR)
-
-        # Determine the output format based on the file extension
+    """Saves the Pygame surface as an image file."""
+    pygame_image = pg.surfarray.array3d(surface)
+    cv2_img = cv2.cvtColor(pygame_image, cv2.COLOR_RGB2BGR)
+    
+    try:
         _, ext = os.path.splitext(output)
-        ext = ext.lower()  # Normalize extension to lowercase
-
+        ext = ext.lower()
+        
         if ext in ('.jpg', '.jpeg'):
-            cv2.imwrite(output, cv2_img, [int(cv2.IMWRITE_JPEG_QUALITY), 90])  # JPEG compression
+            cv2.imwrite(output, cv2_img, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
         elif ext in ('.png'):
-            cv2.imwrite(output, cv2_img, [int(cv2.IMWRITE_PNG_COMPRESSION), 9])  # PNG compression
+            cv2.imwrite(output, cv2_img, [int(cv2.IMWRITE_PNG_COMPRESSION), 9])
         elif ext in ('.gif'):
-            # GIF saving typically requires specialized libraries like Pillow
-            # Consider adding a GIF saving logic here if you need it
-            raise NotImplementedError("GIF saving is not implemented.")
+            raise NotImplementedError("GIF saving not implemented.")
         else:
             cv2.imwrite(output, cv2_img)
+    except Exception as e:
+        print(f"Error saving image: {e}")
+        return False
+    return True
 
 class Asciify:
     def __init__(self):
         pg.init()
+        self.font = pg.font.SysFont('Courier', 12, bold=False)
         self.ascii_chars = ' ixzao*#MW&8%B@$'
-        self.font = pg.font.SysFont('Courier', 12, bold=False)  # Default font size
 
     def video(self, video_path, color_lvl=32, pixel_size=12, output_path='ascii_col.avi', 
               geometry=None, output_fps=None):
